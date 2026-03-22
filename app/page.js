@@ -1,5 +1,6 @@
 "use client";
-import { useState, useRef, createContext, useContext } from "react";
+import { useState, useRef, useEffect, createContext, useContext } from "react";
+import { supabase } from "../lib/supabase";
 
 const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
@@ -7,10 +8,39 @@ function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [loginMessage, setLoginMessage] = useState("");
-  const login = (u) => { setUser(u); setShowLogin(false); setLoginMessage(""); };
-  const logout = () => setUser(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const u = session.user;
+        setUser({ id: u.id, name: u.user_metadata?.display_name || u.email?.split("@")[0], email: u.email });
+      }
+      setLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        const u = session.user;
+        setUser({ id: u.id, name: u.user_metadata?.display_name || u.email?.split("@")[0], email: u.email });
+      } else { setUser(null); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+  const loginEmail = async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    setShowLogin(false); setLoginMessage("");
+  };
+  const signupEmail = async (email, password, displayName) => {
+    const { error } = await supabase.auth.signUp({ email, password, options: { data: { display_name: displayName } } });
+    if (error) throw error;
+    setShowLogin(false); setLoginMessage("");
+  };
+  const loginGoogle = async () => {
+    await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
+  };
+  const logout = async () => { await supabase.auth.signOut(); setUser(null); };
   const requireAuth = (msg) => { if (user) return true; setLoginMessage(msg || ""); setShowLogin(true); return false; };
-  return <AuthContext.Provider value={{ user, login, logout, showLogin, setShowLogin, requireAuth, loginMessage }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loginEmail, signupEmail, loginGoogle, logout, showLogin, setShowLogin, requireAuth, loginMessage, loading }}>{children}</AuthContext.Provider>;
 }
 
 const LangContext = createContext(null);
@@ -74,20 +104,6 @@ function LangProvider({children}){
   return <LangContext.Provider value={{lang,t:TR[lang],toggle:()=>setLang(l=>l==="ja"?"en":"ja")}}>{children}</LangContext.Provider>;
 }
 
-const EX=[
-  {id:1,image:"\u{1F6BB}",category:"トイレ",original:"御手洗い",bad:"Honorable Hand Wash",correct:"Restroom",location:"東京・渋谷",likes:2847,explanation:"「御」をhonorableと直訳。",author:"翻訳ハンター"},
-  {id:2,image:"\u{1F35C}",category:"メニュー",original:"親子丼",bad:"Parent and Child Bowl",correct:"Chicken & Egg Rice Bowl",location:"大阪・なんば",likes:4210,explanation:"直訳すると不気味。",author:"大阪グルメ"},
-  {id:3,image:"\u26A0\uFE0F",category:"看板",original:"足元注意",bad:"Beware of Your Feet",correct:"Watch Your Step",location:"京都・嵐山",likes:3652,explanation:"足を警戒するのではなく足元に注意。",author:"京都散歩"},
-  {id:4,image:"\u{1F6AD}",category:"看板",original:"歩きタバコ禁止",bad:"No Walking Tobacco",correct:"No Smoking While Walking",location:"福岡・天神",likes:5123,explanation:"行為を説明する必要がある。",author:"福岡レポーター"},
-  {id:5,image:"\u{1F363}",category:"メニュー",original:"回転寿司",bad:"Spinning Sushi",correct:"Conveyor Belt Sushi",location:"名古屋・栄",likes:3891,explanation:"寿司が回転しているイメージに。",author:"寿司マニア"},
-  {id:6,image:"\u{1F697}",category:"看板",original:"徐行",bad:"Slow Slow",correct:"Slow Down",location:"北海道・小樽",likes:2156,explanation:"二回繰り返して訳した。",author:"北海道ドライブ"},
-  {id:7,image:"\u{1F3E8}",category:"ホテル",original:"精算機",bad:"Spirit Counting Machine",correct:"Payment Machine",location:"札幌・すすきの",likes:6204,explanation:"「精」をspiritと誤訳。",author:"ホテル評論家"},
-  {id:8,image:"\u{1F371}",category:"メニュー",original:"天津飯",bad:"Tianjin Rice",correct:"Crab Omelette over Rice",location:"横浜・中華街",likes:1893,explanation:"地名だけでは伝わらない。",author:"横浜食べ歩き"},
-  {id:9,image:"\u{1F6BF}",category:"温泉",original:"かけ湯をしてください",bad:"Please Hang Hot Water",correct:"Please Rinse Off Before Entering",location:"箱根",likes:7891,explanation:"「かける」をhangと誤訳。",author:"温泉ソムリエ"},
-  {id:10,image:"\u{1F3EA}",category:"コンビニ",original:"肉まん",bad:"Meat Man",correct:"Steamed Pork Bun",location:"東京・新宿",likes:9320,explanation:"「まん」をmanと誤訳。",author:"コンビニ研究家"},
-  {id:11,image:"\u{1F38C}",category:"看板",original:"立入禁止",bad:"Do Not Standing Enter",correct:"No Entry",location:"広島・宮島",likes:3456,explanation:"「立入」を分解した。",author:"広島観光"},
-  {id:12,image:"\u{1F376}",category:"メニュー",original:"飲み放題",bad:"Free Drinking",correct:"All-You-Can-Drink",location:"東京・新橋",likes:4567,explanation:"「自由に飲酒」の意味に。",author:"居酒屋マスター"},
-];
 const CDATA=["メニュー","看板","トイレ","ホテル","温泉","コンビニ"];
 const PCATS=["メニュー","看板","トイレ","ホテル","温泉","コンビニ","駅・交通","その他"];
 const SCENES=[{v:"sign",ja:"看板",en:"Sign"},{v:"menu",ja:"メニュー",en:"Menu"},{v:"hotel",ja:"ホテル",en:"Hotel"},{v:"shop",ja:"ショップ",en:"Shop"},{v:"transport",ja:"交通",en:"Transport"},{v:"onsen",ja:"温泉",en:"Onsen"},{v:"other",ja:"その他",en:"Other"}];
@@ -109,14 +125,14 @@ const lbl={fontFamily:FS,fontSize:12,fontWeight:500,color:C.mid,display:"block",
 const bt=(p)=>({fontFamily:FS,fontSize:14,fontWeight:600,padding:"12px 24px",border:p?"none":`1px solid ${C.border}`,borderRadius:8,cursor:"pointer",background:p?C.accent:C.card,color:p?"#fff":C.mid,transition:"all 0.2s",display:"flex",alignItems:"center",justifyContent:"center",gap:6});
 
 function LoginModal(){
-  const{login,showLogin,setShowLogin,loginMessage}=useAuth();const{t}=useLang();
+  const{loginEmail,signupEmail,loginGoogle,showLogin,setShowLogin,loginMessage}=useAuth();const{t}=useLang();
   const[mode,setMode]=useState("select");const[em,setEm]=useState("");const[pw,setPw]=useState("");const[nm,setNm]=useState("");
   const[err,setErr]=useState("");const[ld,setLd]=useState(false);
   if(!showLogin)return null;
   const close=()=>{setShowLogin(false);setMode("select");setEm("");setPw("");setNm("");setErr("");};
-  const sso=p=>{setLd(true);setTimeout(()=>{login({name:p==="google"?"Google User":"LINE User",email:`u@${p}.com`,provider:p});setLd(false);},800);};
-  const eLg=()=>{if(!em||!pw){setErr(t.errEmailPw);return;}setLd(true);setTimeout(()=>{login({name:em.split("@")[0],email:em,provider:"email"});setLd(false);},800);};
-  const eSu=()=>{if(!nm||!em||!pw){setErr(t.errFillAll);return;}if(pw.length<8){setErr(t.errPwLen);return;}setLd(true);setTimeout(()=>{login({name:nm,email:em,provider:"email"});setLd(false);},800);};
+  const ggl=async()=>{setLd(true);try{await loginGoogle();}catch(e){setErr(e.message);}setLd(false);};
+  const eLg=async()=>{if(!em||!pw){setErr(t.errEmailPw);return;}setLd(true);try{await loginEmail(em,pw);}catch(e){setErr(e.message);}setLd(false);};
+  const eSu=async()=>{if(!nm||!em||!pw){setErr(t.errFillAll);return;}if(pw.length<8){setErr(t.errPwLen);return;}setLd(true);try{await signupEmail(em,pw,nm);}catch(e){setErr(e.message);}setLd(false);};
   return(
     <div onClick={close} style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(28,25,23,0.4)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"fadeIn 0.2s"}}>
       <div onClick={e=>e.stopPropagation()} style={{background:C.card,borderRadius:16,width:"100%",maxWidth:380,padding:"36px 32px",animation:"slideUp 0.3s ease-out"}}>
@@ -126,10 +142,9 @@ function LoginModal(){
         </div>
         {loginMessage&& <p style={{fontFamily:FS,fontSize:13,color:C.accent,margin:"0 0 16px",padding:"8px 12px",background:C.accentBg,borderRadius:6}}>{loginMessage}</p>}
         {mode!=="signup"&& <div><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
-          <button onClick={()=>sso("google")} disabled={ld} style={{...bt(false),width:"100%",padding:"12px",gap:8}}>
+          <button onClick={ggl} disabled={ld} style={{...bt(false),width:"100%",padding:"12px",gap:8}}>
             <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
             {t.googleLogin}</button>
-          <button onClick={()=>sso("line")} disabled={ld} style={{...bt(false),width:"100%",padding:"12px",gap:8,background:"#06C755",color:"#fff",border:"none"}}>{t.lineLogin}</button>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12,margin:"0 0 20px"}}><div style={{flex:1,height:1,background:C.border}}/><span style={{fontFamily:FS,fontSize:12,color:C.light}}>{t.or}</span><div style={{flex:1,height:1,background:C.border}}/></div></div>}
         {mode==="select"&& <div>
@@ -163,7 +178,7 @@ function DetailModal({item,onClose,liked,onToggleLike}){
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(28,25,23,0.4)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn 0.2s"}}>
       <div onClick={e=>e.stopPropagation()} style={{background:C.card,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"85vh",overflowY:"auto",animation:"slideUp 0.3s ease-out"}}>
-        {item.photo? <div style={{position:"relative"}}><img src={item.photo} alt="" style={{width:"100%",maxHeight:240,objectFit:"cover",borderRadius:"16px 16px 0 0",display:"block"}}/><button onClick={onClose} style={{position:"absolute",top:12,right:12,width:30,height:30,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.4)",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>✕</button></div>
+        {item.photo_url? <div style={{position:"relative"}}><img src={item.photo_url} alt="" style={{width:"100%",maxHeight:240,objectFit:"cover",borderRadius:"16px 16px 0 0",display:"block"}}/><button onClick={onClose} style={{position:"absolute",top:12,right:12,width:30,height:30,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.4)",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>✕</button></div>
         : <div style={{padding:"28px 28px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:40}}>{item.image}</span><button onClick={onClose} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:C.light}}>✕</button></div>}
         <div style={{padding:"24px 28px 28px"}}>
           <div style={{fontFamily:FS,fontSize:11,color:C.light,marginBottom:4,letterSpacing:"0.05em"}}>{item.category} · {item.location}</div>
@@ -177,11 +192,11 @@ function DetailModal({item,onClose,liked,onToggleLike}){
             <div style={{fontFamily:FF,fontSize:20,fontWeight:600,color:C.ok}}>{item.correct}</div>
           </div>
           {item.explanation&& <p style={{fontFamily:FS,fontSize:13,color:C.mid,margin:"0 0 12px",lineHeight:1.7,padding:"12px 16px",background:C.surface,borderRadius:8}}>{item.explanation}</p>}
-          {item.userComment&& <p style={{fontFamily:FS,fontSize:13,color:C.text,margin:"0 0 16px",lineHeight:1.7,padding:"12px 16px",background:C.infoBg,borderRadius:8,fontStyle:"italic"}}>&quot;{item.userComment}&quot;</p>}
+          {item.user_comment&& <p style={{fontFamily:FS,fontSize:13,color:C.text,margin:"0 0 16px",lineHeight:1.7,padding:"12px 16px",background:C.infoBg,borderRadius:8,fontStyle:"italic"}}>&quot;{item.user_comment}&quot;</p>}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:12,borderTop:`1px solid ${C.borderLt}`}}>
             <button onClick={lk} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:6,color:liked?C.accent:C.light,padding:0}}>
-              <HeartIcon filled={liked}/><span style={{fontFamily:FS,fontSize:13,fontWeight:500}}>{(item.likes+(liked?1:0)).toLocaleString()}</span></button>
-            {item.author&& <span style={{fontFamily:FS,fontSize:12,color:C.light}}>{t.by} {item.author}</span>}
+              <HeartIcon filled={liked}/><span style={{fontFamily:FS,fontSize:13,fontWeight:500}}>{(item.likes_count+(liked?1:0)).toLocaleString()}</span></button>
+            {item.author_name&& <span style={{fontFamily:FS,fontSize:12,color:C.light}}>{t.by} {item.author_name}</span>}
           </div>
         </div>
       </div>
@@ -189,12 +204,12 @@ function DetailModal({item,onClose,liked,onToggleLike}){
   );
 }
 
-function FeedTab({posts}){
+function FeedTab({posts,likedSet,onToggleLike}){
   const{t}=useLang();const CATS=[t.all,...CDATA];
-  const[cat,setCat]=useState(null);const[liked,setLiked]=useState({});const[sel,setSel]=useState(null);
+  const[cat,setCat]=useState(null);const[sel,setSel]=useState(null);
   const{requireAuth}=useAuth();
   const f=!cat||cat===t.all?posts:posts.filter(p=>p.category===cat);
-  const tl=id=>{if(!requireAuth(t.authLike))return;setLiked(p=>({...p,[id]:!p[id]}));};
+  const tl=id=>{if(!requireAuth(t.authLike))return;onToggleLike(id);};
   return(
     <div style={{maxWidth:560,margin:"0 auto",padding:"0 20px 80px"}}>
       <div style={{padding:"40px 0 24px"}}>
@@ -203,7 +218,7 @@ function FeedTab({posts}){
         <div style={{display:"flex",gap:12,marginTop:20,fontFamily:FS,fontSize:13,color:C.light}}>
           <span><strong style={{color:C.text,fontWeight:600}}>{f.length}</strong> {t.posts}</span>
           <span style={{color:C.borderLt}}>·</span>
-          <span><strong style={{color:C.text,fontWeight:600}}>{(f.reduce((s,i)=>s+i.likes,0)/1000).toFixed(1)}K</strong> {t.likes}</span>
+          <span><strong style={{color:C.text,fontWeight:600}}>{(f.reduce((s,i)=>s+i.likes_count,0)/1000).toFixed(1)}K</strong> {t.likes}</span>
         </div>
       </div>
       <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:20,scrollbarWidth:"none"}}>
@@ -211,14 +226,14 @@ function FeedTab({posts}){
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:3}}>
         {f.map((item,idx)=>(
-          <button key={item.id} onClick={()=>setSel(item)} style={{aspectRatio:"1",background:item.photo?"#000":C.surface,border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:item.photo?0:10,position:"relative",overflow:"hidden",borderRadius:2,animation:`fadeUp 0.35s ease-out ${idx*0.03}s both`}}
+          <button key={item.id} onClick={()=>setSel(item)} style={{aspectRatio:"1",background:item.photo_url?"#000":C.surface,border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:item.photo_url?0:10,position:"relative",overflow:"hidden",borderRadius:2,animation:`fadeUp 0.35s ease-out ${idx*0.03}s both`}}
             onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-            {item.photo? <div style={{display:"contents"}}><img src={item.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/><div style={{position:"absolute",inset:0,background:"linear-gradient(transparent 50%,rgba(0,0,0,0.55))"}}/><div style={{position:"absolute",bottom:6,left:8,right:8}}><div style={{fontFamily:FS,fontSize:11,fontWeight:600,color:"#fff",lineHeight:1.2}}>{item.bad}</div></div></div>
+            {item.photo_url? <div style={{display:"contents"}}><img src={item.photo_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/><div style={{position:"absolute",inset:0,background:"linear-gradient(transparent 50%,rgba(0,0,0,0.55))"}}/><div style={{position:"absolute",bottom:6,left:8,right:8}}><div style={{fontFamily:FS,fontSize:11,fontWeight:600,color:"#fff",lineHeight:1.2}}>{item.bad}</div></div></div>
             : <div style={{display:"contents"}}><span style={{fontSize:26,marginBottom:4}}>{item.image}</span><div style={{fontFamily:FS,fontSize:10,fontWeight:600,color:C.text,textAlign:"center",lineHeight:1.2}}>{item.bad}</div><div style={{fontFamily:FS,fontSize:8,color:C.light,marginTop:2}}>{item.original}</div></div>}
           </button>
         ))}
       </div>
-      {sel&& <DetailModal item={sel} onClose={()=>setSel(null)} liked={!!liked[sel.id]} onToggleLike={tl}/>}
+      {sel&& <DetailModal item={sel} onClose={()=>setSel(null)} liked={likedSet.has(sel.id)} onToggleLike={tl}/>}
     </div>
   );
 }
@@ -228,11 +243,37 @@ function PostTab({onPostCreated,switchToFeed}){
   const[photo,setPhoto]=useState(null);const[orig,setOrig]=useState("");const[bad,setBad]=useState("");const[correct,setCorrect]=useState("");
   const[loc,setLoc]=useState("");const[cat,setCat]=useState("");const[expl,setExpl]=useState("");const[comment,setComment]=useState("");
   const[step,setStep]=useState(1);const[done,setDone]=useState(false);const[aiLd,setAiLd]=useState(false);const[aiErr,setAiErr]=useState("");
+  const[submitting,setSubmitting]=useState(false);
   const fRef=useRef(null);
   const onPh=e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>10*1024*1024){alert("10MB max");return;}const r=new FileReader();r.onload=ev=>{setPhoto(ev.target.result);setAiErr("");};r.readAsDataURL(f);};
   const analyze=async()=>{if(!photo)return;setAiLd(true);setAiErr("");try{const b=photo.split(",")[1];const m=photo.split(";")[0].split(":")[1];const r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64:b,mediaType:m})});const d=await r.json();const p=JSON.parse((d.content?.[0]?.text||"").replace(/```json|```/g,"").trim());if(p.error){setAiErr(p.error);}else{if(p.original)setOrig(p.original);if(p.badTranslation)setBad(p.badTranslation);if(p.correctTranslation)setCorrect(p.correctTranslation);if(p.explanation)setExpl(p.explanation);if(p.suggestedCategory)setCat(p.suggestedCategory);setStep(2);}
   }catch(e){setAiErr(t.aiError);}setAiLd(false);};
-  const submit=()=>{if(!requireAuth(t.authPost))return;onPostCreated({id:Date.now(),image:"\u{1F4F8}",photo,category:cat||"その他",original:orig,bad,correct,location:loc||"",likes:0,explanation:expl,userComment:comment,author:user.name});setDone(true);};
+  const submit=async()=>{
+    if(!requireAuth(t.authPost))return;
+    setSubmitting(true);
+    try{
+      let photoUrl=null;
+      if(photo){
+        const b=photo.split(",")[1];const m=photo.split(";")[0].split(":")[1];
+        const ext=m.split("/")[1]||"jpeg";const fileName=`${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const byteChars=atob(b);const byteArr=new Uint8Array(byteChars.length);
+        for(let i=0;i<byteChars.length;i++)byteArr[i]=byteChars.charCodeAt(i);
+        const blob=new Blob([byteArr],{type:m});
+        const{error:upErr}=await supabase.storage.from("photos").upload(fileName,blob);
+        if(upErr)throw upErr;
+        const{data:{publicUrl}}=supabase.storage.from("photos").getPublicUrl(fileName);
+        photoUrl=publicUrl;
+      }
+      const{error}=await supabase.from("posts").insert({
+        image:"\u{1F4F8}",photo_url:photoUrl,category:cat||"その他",original:orig,bad,correct,
+        location:loc||"",explanation:expl,user_comment:comment,
+        author_id:user.id,author_name:user.name
+      });
+      if(error)throw error;
+      onPostCreated();setDone(true);
+    }catch(e){setAiErr(e.message);}
+    setSubmitting(false);
+  };
   const reset=()=>{setDone(false);setStep(1);setPhoto(null);setOrig("");setBad("");setCorrect("");setLoc("");setCat("");setExpl("");setComment("");setAiErr("");};
   const ok2=orig.trim()&&bad.trim()&&correct.trim();
   if(done)return(<div style={{maxWidth:560,margin:"0 auto",padding:"80px 20px",textAlign:"center"}}>
@@ -283,7 +324,7 @@ function PostTab({onPostCreated,switchToFeed}){
             </div>
           </div>
         </div>
-        <div style={{display:"flex",gap:10}}><button onClick={()=>setStep(2)} style={{...bt(false),flex:1}}>{t.prev}</button><button onClick={submit} style={{...bt(true),flex:2}}>{t.submit}</button></div>
+        <div style={{display:"flex",gap:10}}><button onClick={()=>setStep(2)} style={{...bt(false),flex:1}}>{t.prev}</button><button onClick={submit} disabled={submitting} style={{...bt(true),flex:2,opacity:submitting?0.5:1}}>{submitting?t.analyzing:t.submit}</button></div>
         {!user&& <p style={{fontFamily:FS,fontSize:12,color:C.light,textAlign:"center",margin:0}}>{t.loginRequired}</p>}
       </div>}
     </div>
@@ -294,8 +335,7 @@ function TranslateTab(){
   const{t,lang}=useLang();const[jp,setJp]=useState("");const[sc,setSc]=useState("sign");
   const[res,setRes]=useState(null);const[ld,setLd]=useState(false);const[err,setErr]=useState(null);const[cp,setCp]=useState(false);
   const go=async()=>{if(!jp.trim())return;setLd(true);setErr(null);setRes(null);const sl=SCENES.find(s=>s.v===sc);
-    const sceneLabel=sl?.ja;
-    const japanese=jp;
+    const sceneLabel=sl?.ja;const japanese=jp;
     try{const r=await fetch("/api/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({japanese,scene:sceneLabel})});const d=await r.json();setRes(JSON.parse((d.content?.[0]?.text||"").replace(/```json|```/g,"").trim()));
     }catch(e){setErr(t.transError);}finally{setLd(false);}};
   const copy=x=>{navigator.clipboard.writeText(x);setCp(true);setTimeout(()=>setCp(false),2000);};
@@ -336,9 +376,39 @@ function TranslateTab(){
 }
 
 function AppInner(){
-  const{lang,t,toggle}=useLang();const[tab,setTab]=useState("feed");const[up,setUp]=useState([]);
-  const{user,setShowLogin,logout}=useAuth();const all=[...up,...EX];
+  const{lang,t,toggle}=useLang();const[tab,setTab]=useState("feed");
+  const[posts,setPosts]=useState([]);const[likedSet,setLikedSet]=useState(new Set());
+  const{user,setShowLogin,logout,loading}=useAuth();
   const tabs=lang==="ja"?[{id:"feed",l:t.tabFeed},{id:"translate",l:t.tabTranslate},{id:"post",l:t.tabPost}]:[{id:"feed",l:t.tabFeed},{id:"post",l:t.tabPost},{id:"translate",l:t.tabTranslate}];
+
+  const fetchPosts=async()=>{
+    const{data}=await supabase.from("posts").select("*").order("created_at",{ascending:false});
+    if(data)setPosts(data);
+  };
+  const fetchLikes=async()=>{
+    if(!user)return;
+    const{data}=await supabase.from("likes").select("post_id").eq("user_id",user.id);
+    if(data)setLikedSet(new Set(data.map(l=>l.post_id)));
+  };
+  useEffect(()=>{fetchPosts();},[]);
+  useEffect(()=>{if(user)fetchLikes();else setLikedSet(new Set());},[user]);
+
+  const toggleLike=async(postId)=>{
+    if(!user)return;
+    if(likedSet.has(postId)){
+      await supabase.from("likes").delete().eq("post_id",postId).eq("user_id",user.id);
+      setLikedSet(prev=>{const s=new Set(prev);s.delete(postId);return s;});
+      setPosts(prev=>prev.map(p=>p.id===postId?{...p,likes_count:p.likes_count-1}:p));
+    }else{
+      await supabase.from("likes").insert({post_id:postId,user_id:user.id});
+      setLikedSet(prev=>new Set(prev).add(postId));
+      setPosts(prev=>prev.map(p=>p.id===postId?{...p,likes_count:p.likes_count+1}:p));
+    }
+  };
+
+  if(loading)return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <span style={{width:24,height:24,border:`3px solid ${C.border}`,borderTopColor:C.accent,borderRadius:"50%",display:"inline-block",animation:"spin 0.8s linear infinite"}}/></div>;
+
   return(
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:FS}}>
       <style>{`
@@ -370,8 +440,8 @@ function AppInner(){
           </div>
         </div>
       </nav>
-      {tab==="feed"&& <FeedTab posts={all}/>}
-      {tab==="post"&& <PostTab onPostCreated={p=>setUp(prev=>[p,...prev])} switchToFeed={()=>setTab("feed")}/>}
+      {tab==="feed"&& <FeedTab posts={posts} likedSet={likedSet} onToggleLike={toggleLike}/>}
+      {tab==="post"&& <PostTab onPostCreated={fetchPosts} switchToFeed={()=>setTab("feed")}/>}
       {tab==="translate"&& <TranslateTab/>}
       <LoginModal/>
     </div>
